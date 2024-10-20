@@ -47,21 +47,18 @@ namespace Assets.Editor.TSGLoader
                 int offsetTrack;
                 for (var i = 0; i < mDataSubCount; i++)
                 {
-                    var mesh = new Mesh();
-                    var vertList = new List<Vector3>();
-                    var uv1List = new List<Vector2>();
-                    var uv2List = new List<Vector2>();
-                    var normalList = new List<Vector3>();
-                    var triangleList = new List<int>();
-                    var vertColorList = new List<Color32>();
+                    
 
                     offsetTrack = mDataSubStart + (i * 12) + 8;
 
                     var offset = GetIntData(offsetTrack, 0, file, false);
-                    var chunkHead = offset + meshChunkStart + 12;
 
-                    var vertCountDataOffset = GetIntData(chunkHead, 0, file, false) + meshChunkStart;
-                    var vertChunkTotalSize = GetIntData(vertCountDataOffset, 0, file, false);
+                    var submeshInfoBlockStart = offset + meshChunkStart;
+
+                    var vertCountDataOffset = GetIntData(submeshInfoBlockStart, 12, file, false) + meshChunkStart;
+                    var materialSplitCount = GetIntData(submeshInfoBlockStart, 16, file, false);
+
+					var vertChunkTotalSize = GetIntData(vertCountDataOffset, 0, file, false);
                     var vertChunkEntrySize = GetIntData(vertCountDataOffset, 4, file, false);
                     var vertCount = vertChunkTotalSize / vertChunkEntrySize;
                     var vertStart = GetIntData(vertCountDataOffset, 16, file, false) + faceDataOffset + meshChunkStart;
@@ -69,33 +66,16 @@ namespace Assets.Editor.TSGLoader
                     var faceStart = GetIntData(vertCountDataOffset, 48, file, false) + faceDataOffset + meshChunkStart;
 
                     var tempList = new List<int>();
-                    var StripList = new List<int[]>();
 
-                    for (var f = 0; f < lengthOfStripBlock; f++)
-                    {
-                        var indice = GetIntData(faceStart, f * 2, file, false, 2);
-                        if (indice == 65535)
-                        {
-                            StripList.Add(tempList.ToArray());
-                            tempList.Clear();
-                        }
-                        else
-                        {
-                            tempList.Add(indice);
-						}
-                    }
+					
+					var vertList = new List<Vector3>();
+					var uv1List = new List<Vector2>();
+					var uv2List = new List<Vector2>();
+					var normalList = new List<Vector3>();
+					
+					var vertColorList = new List<Color32>();
 
-                    foreach (var strip in StripList)
-                    {
-                        foreach (var face in StripToFaces(strip.ToList()))
-                        {
-                            triangleList.Add(face[0]);
-                            triangleList.Add(face[1]);
-                            triangleList.Add(face[2]);
-                        }
-                    }
-
-                    int offsetTracker;
+					int offsetTracker;
                     for (var v = 0; v < vertCount; v++)
                     {
                         offsetTracker = vertStart + (v * vertChunkEntrySize);
@@ -114,15 +94,99 @@ namespace Assets.Editor.TSGLoader
                         uv2List.Add(GetUV(uv2));
                     }
 
-                    mesh.SetVertices(vertList);
-                    mesh.SetTriangles(triangleList, 0);
-                    mesh.SetUVs(1, uv1List);
-                    mesh.SetUVs(0, uv2List);
-                    mesh.SetNormals(normalList);
-                    mesh.SetColors(vertColorList);
-                    //mesh.RecalculateNormals();
-                    mesh.name = $"EAMesh{h}Submesh{i}";
-                    meshList.Add(mesh);
+                    if (materialSplitCount == 1)
+                    {
+	                    var mesh = new Mesh();
+	                    var triangleList = new List<int>();
+
+	                    var StripList = new List<int[]>();
+	                    for (var f = 0; f < lengthOfStripBlock; f++)
+	                    {
+		                    var indice = GetIntData(faceStart, f * 2, file, false, 2);
+		                    if (indice == 65535)
+		                    {
+			                    StripList.Add(tempList.ToArray());
+			                    tempList.Clear();
+		                    }
+		                    else
+		                    {
+			                    tempList.Add(indice);
+		                    }
+	                    }
+
+	                    foreach (var strip in StripList)
+	                    {
+		                    foreach (var face in StripToFaces(strip.ToList()))
+		                    {
+			                    triangleList.Add(face[0]);
+			                    triangleList.Add(face[1]);
+			                    triangleList.Add(face[2]);
+		                    }
+	                    }
+
+						mesh.SetVertices(vertList);
+	                    mesh.SetTriangles(triangleList, 0);
+	                    mesh.SetUVs(1, uv1List);
+	                    mesh.SetUVs(0, uv2List);
+	                    mesh.SetNormals(normalList);
+	                    mesh.SetColors(vertColorList);
+	                    mesh.name = $"EAMesh{h}Submesh{i}";
+	                    meshList.Add(mesh);
+					}
+                    else
+                    {
+	                    var indexInto = 0;
+
+	                    for (var j = 0; j < materialSplitCount; j++)
+	                    {
+		                    var mesh = new Mesh();
+		                    var triangleList = new List<int>();
+
+							var indexCount = GetIntData(vertCountDataOffset, 116 + (36 * j), file, false);
+		                    Debug.Log($"Material {j} is {indexCount} indexes");
+
+		                    var StripList = new List<int[]>();
+							for (var f = 0; f < indexCount; f++)
+		                    {
+			                    var indice = GetIntData(faceStart, (f + indexInto) * 2, file, false, 2);
+			                    if (indice == 65535)
+			                    {
+				                    StripList.Add(tempList.ToArray());
+				                    tempList.Clear();
+			                    }
+			                    else
+			                    {
+				                    tempList.Add(indice);
+			                    }
+		                    }
+
+							indexInto += indexCount;
+
+							foreach (var strip in StripList)
+							{
+								foreach (var face in StripToFaces(strip.ToList()))
+								{
+									triangleList.Add(face[0]);
+									triangleList.Add(face[1]);
+									triangleList.Add(face[2]);
+								}
+							}
+
+							mesh.SetVertices(vertList);
+							mesh.SetTriangles(triangleList, 0);
+							mesh.SetUVs(1, uv1List);
+							mesh.SetUVs(0, uv2List);
+							mesh.SetNormals(normalList);
+							mesh.SetColors(vertColorList);
+							mesh.name = $"EAMesh{h}Submesh{i}Material{j}";
+							meshList.Add(mesh);
+						}
+
+	                    if (indexInto != lengthOfStripBlock)
+	                    {
+                            Debug.Log($"EAMesh{h}Submesh{i} has {lengthOfStripBlock - indexInto} indexes left over!");
+	                    }
+					}
                 }
             }
             return meshList;
